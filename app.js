@@ -1071,11 +1071,14 @@
 				sections.push(current);
 				continue;
 			}
-			if (!current || !/^\{\|.*static-row-header-step/.test(trimmed)) continue;
+			if (!current || !/^\{\|/.test(trimmed)) continue;
 
 			// Collect this step table and split it into rows.
 			var tl = [];
 			for (i++; i < lines.length && !/^\|\}/.test(lines[i].trim()); i++) tl.push(lines[i]);
+			// Only tables with an "Activity" header are step tables; this skips the
+			// Order|Task repeatable tables and any other non-step wikitable.
+			if (!tl.some(function (l) { return /^\s*!/.test(l) && /activity/i.test(l); })) continue;
 			var rows = [], cur = null;
 			tl.forEach(function (l) {
 				if (/^\|-/.test(l.trim())) { if (cur) rows.push(cur); cur = []; }
