@@ -197,7 +197,7 @@
 				errcb("The wiki returned no guide for this quest.");
 				return;
 			}
-			var parsed = title === PATHWAY_TITLE
+			var parsed = isPathwayStyle(title)
 				? parsePathwayGuide(data.parse.wikitext["*"])
 				: parseQuickGuide(data.parse.wikitext["*"]);
 			parsed.title = title;
@@ -1040,6 +1040,8 @@
 	// Miniguides half of the page and non-step tables are skipped.
 
 	var PATHWAY_TITLE = "Ironman Mode/Guide/Efficient Ironman Pathway Guide";
+	var EPICVERITY_TITLE = "User:EpicVerity";
+	function isPathwayStyle(t) { return t === PATHWAY_TITLE || t === EPICVERITY_TITLE; }
 
 	function parsePathwayGuide(wikitext) {
 		var main = wikitext.split(/\n=\s*Miniguides\s*=/)[0];
@@ -1093,6 +1095,9 @@
 					}
 				});
 				if (!cells.length) return;
+				// EpicVerity-style tables lead with a step-number column ("1", "53a").
+				// Drop it so Activity/Notes line up with the official pathway layout.
+				if (cells.length > 1 && /^\s*\d+[a-z]?\s*$/i.test(cellParse(cells[0]).text)) cells.shift();
 				var act = cellParse(cells[0] || "");
 				if (!act.text && !act.links.length) return;
 				var note = cellParse(cells[1] || "");
@@ -1116,7 +1121,9 @@
 	}
 
 	function guideDisplayName(title) {
-		return title === PATHWAY_TITLE ? "Efficient Ironman Pathway" : title.replace(/\/Quick guide$/, "");
+		if (title === PATHWAY_TITLE) return "Efficient Ironman Pathway";
+		if (title === EPICVERITY_TITLE) return "EpicVerity Ironman Pathway";
+		return title.replace(/\/Quick guide$/, "");
 	}
 
 	// Extract the {{Quest details}} items/recommended lists from a quest's
@@ -3049,6 +3056,14 @@
 			prow.addEventListener("click", function () { openQuest(PATHWAY_TITLE); });
 			main.appendChild(prow);
 		}
+		if ("epicverity ironman pathway".indexOf(filter) !== -1) {
+			var evrow = el("div", "quest-row pathway-row");
+			if (rankMap) evrow.appendChild(el("span", "quest-rank", "★"));
+			evrow.appendChild(el("span", "quest-name", "EpicVerity Ironman Pathway"));
+			evrow.appendChild(el("span", "quest-status", "guide"));
+			evrow.addEventListener("click", function () { openQuest(EPICVERITY_TITLE); });
+			main.appendChild(evrow);
+		}
 		sortedIndex().forEach(function (q) {
 			if (filter && q.name.toLowerCase().indexOf(filter) === -1) return;
 			var status = questStatus(q);
@@ -3408,7 +3423,7 @@
 			resetOverview();
 			applyOverviewVisibility();
 			attachQuestDetails(renderQuestDetails);
-			if (title !== PATHWAY_TITLE) attachFullGuideImages(guide.name, title);
+			if (!isPathwayStyle(title)) attachFullGuideImages(guide.name, title);
 			restoreQuestingModes();
 			if (overlayTimer) paintOverlay();
 		}, function (msg) {
@@ -4000,6 +4015,7 @@
 				});
 				if (match) openQuest(match.title);
 				else if (name.toLowerCase() === PATHWAY_TITLE.toLowerCase() || /^pathway$/i.test(name)) openQuest(PATHWAY_TITLE);
+				else if (name.toLowerCase() === EPICVERITY_TITLE.toLowerCase() || /^epicverity$/i.test(name)) openQuest(EPICVERITY_TITLE);
 			}
 		}, function (msg) {
 			setStatus("index-status", msg + " — check your connection and reload.");
