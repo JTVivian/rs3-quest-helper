@@ -1221,7 +1221,8 @@
 	// Render the overlay as a proper card on a canvas: dark rounded panel
 	// with wrapped step text, progress, sub-steps, chat options and items.
 	function renderOverlayCard(step, doneCount, total) {
-		var W = 440, PAD = 12, LH = 20, MAXH = 400;
+		var W = 440, PAD = 12, LH = 20;
+		var MAXH = (step && step.tables && step.tables.length) ? 620 : 400;
 		// All layout below is in native units; a single ctx.scale renders the
 		// whole card larger so the text stays crisp instead of being upscaled.
 		var S = overlayScale();
@@ -1277,11 +1278,25 @@
 				"12px 'Segoe UI', sans-serif", 2);
 		}
 		if (subRows && neededLines.length > 1) neededLines = neededLines.slice(0, 1);
+		// Info tables (e.g. Question/Answer) drawn as compact rows.
+		var tableBlocks = [];
+		if (step && step.tables) {
+			step.tables.forEach(function (t) {
+				var rrows = [];
+				t.rows.forEach(function (cells) {
+					var txt = cells.map(function (c) { return c.text; }).filter(Boolean).join("  \u2014  ");
+					if (txt) rrows.push(wrap(txt, "12px 'Segoe UI', sans-serif", 2));
+				});
+				if (rrows.length) tableBlocks.push({ head: (t.header || []).join(" / "), rows: rrows });
+			});
+		}
+		var tableH = 0;
+		tableBlocks.forEach(function (blk) { tableH += 18; blk.rows.forEach(function (ls) { tableH += ls.length * 16; }); });
 
 		var H = Math.min(MAXH,
 			PAD + 16 + 6 + stepLines.length * LH + chatLines.length * 18 +
 			(renderedSubs.length ? 18 + renderedSubs.length * 17 + hiddenSubs * 17 : 0) +
-			neededLines.length * 17 + PAD);
+			neededLines.length * 17 + tableH + PAD);
 
 		// Panel
 		ctx.clearRect(0, 0, W, 220);
@@ -1349,6 +1364,17 @@
 		ctx.font = "12px 'Segoe UI', sans-serif";
 		ctx.fillStyle = "#9fd47f";
 		neededLines.forEach(function (l) { y += 17; ctx.fillText(l, PAD, y); });
+
+		// Info tables
+		tableBlocks.forEach(function (blk) {
+			y += 16;
+			ctx.font = "700 11px 'Segoe UI', sans-serif";
+			ctx.fillStyle = "#e7c15a";
+			ctx.fillText((blk.head || "TABLE").toUpperCase(), PAD, y);
+			ctx.font = "12px 'Segoe UI', sans-serif";
+			ctx.fillStyle = "#f2ecd8";
+			blk.rows.forEach(function (ls) { ls.forEach(function (l) { y += 16; ctx.fillText(l, PAD, y); }); });
+		});
 
 		return ctx.getImageData(0, 0, Math.round(W * S), Math.round(H * S));
 	}
@@ -3349,11 +3375,12 @@
 				realignOnImageLoad(main, curKey);
 			} else {
 				// Same current step: a sub-tick / item toggle / scan re-rendered
-				// the list. Don't yank the view — keep the user where they were,
-				// but keep correcting for images that are still loading if a
-				// completion just happened.
+				// the list. Hard-preserve the user's scroll and do NOT re-arm the
+				// image-load realign here. Rebuilding the list recreates the guide
+				// <img> elements, and a recreated (cached) image firing its load
+				// event was yanking the view to the current step mid-checklist —
+				// the "scrolls as if the step completed" bug on sub-ticks.
 				main.scrollTop = prevScroll;
-				if (Date.now() <= alignDeadline) realignOnImageLoad(main, curKey);
 			}
 		}
 
@@ -3450,7 +3477,8 @@
 						stepIndex: ti,
 						text: stepData.text,
 						chat: stepData.chat,
-						subs: stepData.sub || []
+						subs: stepData.sub || [],
+						tables: stepData.tables || []
 					});
 				});
 			});
