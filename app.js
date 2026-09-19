@@ -769,20 +769,25 @@
 
 	// Parse a wikitable block (array of raw lines) into display rows.
 	function parseTable(lines) {
-		var rows = [], cells = [];
+		var rows = [], cells = [], header = [], hasHeader = false;
+		function parseCell(c) { return extractChat(cleanMarkup(resolveTemplates(stripCellAttrs(c)))); }
 		function flush() {
-			var texts = [], maps = [];
-			cells.forEach(function (c) {
-				var parsed = extractChat(cleanMarkup(resolveTemplates(stripCellAttrs(c))));
-				if (parsed.text) texts.push(parsed.text);
-				maps = maps.concat(parsed.maps);
-			});
-			if (texts.length) rows.push({ text: texts.join(" — "), maps: maps });
+			if (cells.length) {
+				var parsed = cells.map(parseCell);
+				var texts = [], maps = [];
+				parsed.forEach(function (p) { if (p.text) texts.push(p.text); maps = maps.concat(p.maps); });
+				rows.push({ cells: parsed, text: texts.join(" — "), maps: maps });
+			}
 			cells = [];
 		}
 		lines.forEach(function (line) {
 			line = line.trim();
-			if (/^\{\|/.test(line) || /^\|\}/.test(line) || /^\|\+/.test(line) || /^!/.test(line)) return;
+			if (/^:*\s*\{\|/.test(line) || /^:*\s*\|\}/.test(line) || /^\|\+/.test(line)) return;
+			if (/^!/.test(line)) {
+				hasHeader = true;
+				line.replace(/^!/, "").split(/!!|\|\|/).forEach(function (c) { header.push(parseCell(c).text); });
+				return;
+			}
 			if (/^\|-/.test(line)) { flush(); return; }
 			if (/^\|/.test(line)) {
 				line.slice(1).split("||").forEach(function (c) { cells.push(c); });
@@ -791,7 +796,7 @@
 			}
 		});
 		flush();
-		return rows;
+		return { header: header, rows: rows, hasHeader: hasHeader };
 	}
 
 	function parseQuickGuide(wikitext) {
@@ -814,9 +819,9 @@
 		var tables = [];
 		var kept = [];
 		for (i = 0; i < lines.length; i++) {
-			if (/^\s*\{\|/.test(lines[i])) {
+			if (/^\s*:*\s*\{\|/.test(lines[i])) {
 				var tbl = [];
-				while (i < lines.length && !/^\s*\|\}/.test(lines[i])) tbl.push(lines[i++]);
+				while (i < lines.length && !/^\s*:*\s*\|\}/.test(lines[i])) tbl.push(lines[i++]);
 				if (i < lines.length) tbl.push(lines[i]);
 				tables.push(parseTable(tbl));
 				kept.push("%%TABLE:" + (tables.length - 1) + "%%");
@@ -865,14 +870,18 @@
 
 			var tm = /^%%TABLE:(\d+)%%$/.exec(trimmed);
 			if (tm) {
-				var rows = tables[+tm[1]];
-				if (rows.length) {
+				var tbl = tables[+tm[1]];
+				if (tbl && tbl.rows.length) {
 					var host = lastStep();
 					if (!host) {
 						current.steps.push({ text: "Locations:", chat: null, sub: [] });
 						host = lastStep();
 					}
-					host.sub = (host.sub || []).concat(rows.map(function (r) { return { text: r.text, maps: r.maps }; }));
+					if (tbl.hasHeader && tbl.header.length >= 2) {
+						host.tables = (host.tables || []).concat([{ header: tbl.header, rows: tbl.rows.map(function (r) { return r.cells; }) }]);
+					} else {
+						host.sub = (host.sub || []).concat(tbl.rows.map(function (r) { return { text: r.text, maps: r.maps }; }));
+					}
 				}
 				return;
 			}
@@ -3285,6 +3294,33 @@
 					});
 					body.appendChild(ul);
 				}
+				(stepData.tables || []).forEach(function (t) {
+					var tbl = document.createElement("table");
+					tbl.style.cssText = "border-collapse:collapse;margin:6px 0 4px;width:100%;font-size:12px;";
+					tbl.addEventListener("click", function (e) { e.stopPropagation(); });
+					if (t.header && t.header.length) {
+						var htr = document.createElement("tr");
+						t.header.forEach(function (h) {
+							var th = document.createElement("th");
+							th.textContent = h;
+							th.style.cssText = "text-align:left;padding:3px 8px;border-bottom:1px solid rgba(255,255,255,.28);font-weight:bold;";
+							htr.appendChild(th);
+						});
+						tbl.appendChild(htr);
+					}
+					t.rows.forEach(function (cs, ri) {
+						var tr = document.createElement("tr");
+						if (ri % 2 === 1) tr.style.background = "rgba(255,255,255,.06)";
+						cs.forEach(function (c) {
+							var td = document.createElement("td");
+							td.style.cssText = "padding:3px 8px;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.10);";
+							appendLinkedText(td, c.text, c.links);
+							tr.appendChild(td);
+						});
+						tbl.appendChild(tr);
+					});
+					body.appendChild(tbl);
+				});
 				row.appendChild(body);
 
 				row.addEventListener("click", function () {
